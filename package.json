@@ -1,0 +1,67 @@
+{
+  "name": "@zanreal/medusa-usage-tinybird",
+  "version": "0.1.0",
+  "description": "Tinybird usage sink for @zanreal/medusa-usage: an append-only usage event log in a column store, deduplicated on read so a retry cannot double count.",
+  "keywords": [
+    "clickhouse",
+    "medusa",
+    "medusa-v2",
+    "metering",
+    "tinybird",
+    "usage",
+    "usage-based-billing"
+  ],
+  "homepage": "https://github.com/zanreal-labs/medusa-usage-tinybird#readme",
+  "bugs": {
+    "url": "https://github.com/zanreal-labs/medusa-usage-tinybird/issues"
+  },
+  "license": "MIT",
+  "author": "ZanReal Labs <opensource@zanreal.com> (https://zanreal.com)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zanreal-labs/medusa-usage-tinybird.git"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "lint": "medusa lint src",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@medusajs/cli": "2.18.0",
+    "@medusajs/eslint-plugin": "2.18.0",
+    "@medusajs/framework": "2.18.0",
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "@zanreal/medusa-usage": "workspace:*",
+    "eslint": "^9.0.0",
+    "jiti": "^2.0.0",
+    "typescript": "^5.6.2",
+    "vitest": "^3.2.7"
+  },
+  "peerDependencies": {
+    "@medusajs/framework": "2.18.0",
+    "@zanreal/medusa-usage": ">=0.1.0"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "packageManager": "pnpm@11.13.0"
+}
