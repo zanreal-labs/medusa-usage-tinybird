@@ -1,0 +1,173 @@
+---
+title: Wprowadzenie
+description: "Sink do Tinybirda dla @zanreal/medusa-usage - ten sam dziennik zużycia tylko do dopisywania, przechowywany w magazynie kolumnowym zbudowanym do skanowania miliardów jego wierszy."
+---
+
+`@zanreal/medusa-usage-tinybird` to sink dla
+[`@zanreal/medusa-usage`](https://github.com/zanreal-labs/medusa-usage): ten
+sam dziennik zdarzeń zużycia tylko do dopisywania, który wtyczka już zapisuje,
+tyle że przechowywany w Tinybirdzie zamiast w Postgresie, którego Medusa już
+używa.
+
+## Kiedy tego potrzebujesz, a kiedy nie
+
+Wtyczka ma wbudowany sink do Postgresa i działa na zwykłej instalacji Medusy,
+bez żadnego konta do zakładania gdziekolwiek. To wystarcza z zapasem sklepowi,
+który mierzy kilka tysięcy albo kilka milionów zdarzeń miesięcznie - Postgres
+tego w ogóle nie odczuje.
+
+Ten pakiet jest na drugi koniec tej skali: licznik zliczający miliardy zdarzeń,
+gdzie dziennik przestaje się wygodnie mieścić we własnej bazie aplikacji i
+potrzebujesz magazynu kolumnowego zbudowanego dokładnie do takiego skanowania.
+Instalacja tego pakietu to decyzja, którą podejmujesz, a nie efekt uboczny
+czegokolwiek innego, a wdrożenie, które go nie instaluje, jest pod każdym
+względem nietknięte jego istnieniem - wtyczka nie wie, że ten pakiet istnieje,
+dopóki nie nazwiesz go w `medusa-config.ts`.
+
+## Instalacja
+
+Tak jak `@zanreal/medusa-usage`, ten pakiet też jeszcze nie trafił na npm.
+Instaluje się tak samo, jako zależność gitowa przypięta do commitu:
+
+```jsonc title="package.json"
+{
+  "dependencies": {
+    "@zanreal/medusa-usage": "github:zanreal-labs/medusa-usage#2a260a4d04db6cc89986e0e9d25fcc2f60716b2f",
+    "@zanreal/medusa-usage-tinybird": "github:zanreal-labs/medusa-usage-tinybird#586fa2f3e505e575e516eb6818329e22bf963a44"
+  }
+}
+```
+
+Oba wpisy muszą być przypięte do commitu z tego samego powodu: żadne z tych
+dwóch repozytoriów nie ma jeszcze opublikowanego tagu, więc `#main`
+przesunęłoby się pod tobą przy następnym pushu. Przypięty commit to jedyny
+zapis, który znaczy jutro to samo co dzisiaj - przypnij do tego, co faktycznie
+przetestowałeś, niekoniecznie do tych dwóch powyżej.
+
+Ten pakiet buduje się sam przy instalacji, tak samo jak jego partner -
+`prepare` uruchamia `tsc`, co zamienia pobrane źródła TypeScript w katalog
+`dist/`, na który wskazuje jego `exports`. pnpm 10 i nowsze domyślnie odmawiają
+uruchomienia takiego skryptu dla zależności, której jeszcze nie ufają, więc
+świeża instalacja wymaga jednorazowego dopuszczenia obu pakietów:
+
+```yaml title="pnpm-workspace.yaml"
+allowBuilds:
+  "@zanreal/medusa-usage": true
+  "@zanreal/medusa-usage-tinybird": true
+```
+
+Potem zarejestruj go jako providera wtyczki, pod dowolnym identyfikatorem,
+jakim chcesz go nazwać:
+
+```ts title="medusa-config.ts"
+plugins: [
+  {
+    resolve: "@zanreal/medusa-usage",
+    options: {
+      providers: [
+        {
+          resolve: "@zanreal/medusa-usage-tinybird",
+          id: "tinybird",
+          options: {
+            host: process.env.TINYBIRD_HOST,
+            token: process.env.TINYBIRD_TOKEN,
+          },
+        },
+      ],
+    },
+  },
+];
+```
+
+`id` wybierasz sam, to nie jest nazwa tego pakietu - to on jest tym, na co
+wskazuje opcja `sink` samej wtyczki, i to on pojawia się w polu `sink` każdej
+migawki. Kontrakt, który ten pakiet realizuje bez żadnych zmian, opisuje
+strona [Sinki i konfiguracja](https://github.com/zanreal-labs/medusa-usage/blob/main/docs/sinks.pl.mdx)
+podstawowej wtyczki.
+
+## Wdrożenie schematu, z którym gada ten sink
+
+Sink to jedna połowa tego projektu; drugą jest schemat Tinybirda, z którego
+czyta i do którego pisze, i obie połówki działają poprawnie tylko razem. Ten
+schemat jest w tym repozytorium pod [`tinybird/`](https://github.com/zanreal-labs/medusa-usage-tinybird/tree/main/tinybird) -
+jedno źródło danych i trzy endpointy, i nic więcej:
+
+| Zasób | Plik | Co to jest |
+| --- | --- | --- |
+| `usage_events` | `tinybird/datasources/usage_events.datasource` | Dziennik tylko do dopisywania. `ReplacingMergeTree`, posortowany po `meter, subject, occurred_at, key`, partycjonowany po miesiącu `occurred_at`. |
+| `usage_aggregate` | `tinybird/endpoints/usage_aggregate.pipe` | Suma stojąca za fakturą. |
+| `usage_events_list` | `tinybird/endpoints/usage_events_list.pipe` | Zdarzenia stojące za tą sumą, stronicowane po kluczu. |
+| `usage_events_present` | `tinybird/endpoints/usage_events_present.pipe` | Które klucze dziennik już ma. |
+
+Wdróż go, zanim wskażesz na niego sink, własnym CLI Tinybirda:
+
+```sh
+tb login       # albo --host dla instancji self-hosted
+tb --cloud deploy
+```
+
+**Wdróż schemat z tego repozytorium, zamiast odtwarzać go samemu.** Kolaps na
+odczycie, opisany na stronie [Odczyt dokładnie raz w magazynie bez klucza
+głównego](./consistency.pl.mdx), mieszka wewnątrz tych plików `.pipe`,
+konkretnie w węźle z `GROUP BY key`. Wskazanie tego sinka na źródło danych
+stworzone w inny sposób - ręcznie napisany `MergeTree` albo endpoint bez tego
+grupowania - odda sink, który po cichu liczy podwójnie każde ponowienie, bo nic
+w kodzie TypeScript tego nie wymusza. Gwarancja siedzi w SQL-u, nie w
+kliencie.
+
+Nazwy zasobów to opcje, nie założenia, więc workspace, który już używa nazwy
+`usage_events` do czegoś innego, może wdrożyć ten schemat pod innymi nazwami i
+ustawić `datasource`, `aggregatePipe`, `listPipe` oraz `presentPipe` w
+providerze, żeby pasowały. Token `medusa_usage`, który deklarują te cztery
+pliki, niesie dokładnie te uprawnienia, jakich potrzebuje sink, i nic więcej:
+`APPEND` na źródle danych, `READ` na trzech endpointach - nic, co mogłoby
+usunąć wiersz albo przeczytać coś innego w workspace.
+
+## Opcje
+
+Wszystko, czego sink potrzebuje, pochodzi z `options` providera, z
+zapasowym źródłem w postaci zmiennych środowiskowych dla dwóch wartości, które
+należą do wdrożenia, a nie do repozytorium:
+
+| Opcja | Domyślnie | Co to jest |
+| --- | --- | --- |
+| `host` | `TINYBIRD_HOST` | Host API Tinybirda, np. `https://api.tinybird.co`. |
+| `token` | `TINYBIRD_TOKEN` | Token z `APPEND` na źródle danych i `READ` na endpointach. Token `medusa_usage`, który deklaruje schemat, jest dokładnie taki. |
+| `datasource` | `usage_events` | Dziennik zużycia. |
+| `aggregatePipe` | `usage_aggregate` | Endpoint agregujący. |
+| `listPipe` | `usage_events_list` | Endpoint listujący. |
+| `presentPipe` | `usage_events_present` | Endpoint sprawdzający obecność kluczy. |
+| `checkForDuplicates` | `true` | Sprawdź, które klucze już są zapisane, zanim dopiszesz nowe. |
+| `timeoutMs` | `10000` | Ile może trwać jedno wywołanie HTTP, zanim zostanie porzucone i ponowione. |
+
+Każda opcja jest walidowana przez loader providerów Medusy, zanim serwis
+zostanie w ogóle skonstruowany, więc brakujący token to nieudany start z
+czytelnym zdaniem, co ustawić, a nie `401` sześć godzin w środku okresu
+rozliczeniowego. Sam token jest czytany raz i wstawiany do nagłówka
+`Authorization` - nigdy do adresu URL i nigdy do komunikatu błędu, który mógłby
+trafić do logu dosłownie.
+
+Zauważ, że w każdym przykładzie powyżej host to zawsze `api.tinybird.co` (albo
+twój lokalny adres Tinybird Local do developmentu). Ten sink gada z własną
+infrastrukturą Tinybirda albo infrastrukturą, którą sam uruchamiasz narzędziami
+Tinybirda; nie zna niczego innego.
+
+### `checkForDuplicates`
+
+Domyślnie włączone, i warte dodatkowego zapytania dla większości wdrożeń: to
+dzięki temu `write` prawdziwie raportuje `duplicates`, i to sprawia, że
+ponowiona paczka nic nie dopisuje, zamiast zostawić na dysku drugą kopię
+każdego wiersza.
+
+Wyłączenie tego zmniejsza liczbę zapytań na paczkę o połowę, i **nie może
+spowodować podwójnego liczenia** - deduplikacja jest wymuszana przy odczycie
+dziennika, nigdy przy jego zapisie, co jest tematem [kolejnej
+strony](./consistency.pl.mdx). Kosztuje za to prawdziwość liczników zapisu
+(`duplicates` będzie odtąd zawsze zerem) i dziennik, który gromadzi fizyczne
+kopie ponowionych wierszy, dopóki nie posprząta ich kolejny merge w tle.
+
+## Co dalej
+
+- **[Odczyt dokładnie raz w magazynie bez klucza głównego](./consistency.pl.mdx)** -
+  dlaczego gwarancja tego sinka mieszka w ścieżce odczytu, a nie zapisu, i co
+  dokładnie z tego powodu zostaje ewentualne.

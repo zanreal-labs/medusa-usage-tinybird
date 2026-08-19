@@ -1,0 +1,169 @@
+---
+title: Overview
+description: The Tinybird sink for @zanreal/medusa-usage - the same append-only usage log, in a column store built to scan billions of rows of it.
+---
+
+`@zanreal/medusa-usage-tinybird` is a sink for
+[`@zanreal/medusa-usage`](https://github.com/zanreal-labs/medusa-usage): the
+same append-only usage event log the plugin already writes, stored in Tinybird
+instead of in the Postgres database Medusa already has.
+
+## When you need this, and when you do not
+
+The plugin ships a built-in Postgres sink and works on a plain Medusa install
+with no account to open anywhere. That covers a store metering a few thousand
+or a few million events a month comfortably - Postgres does not notice.
+
+This package is for the other end of that range: a meter counting billions of
+events, where the log stops fitting comfortably in the application's own
+database and you want a column store built for exactly that kind of scan.
+Installing this package is a decision you make, not a side effect of anything
+else, and a deployment that does not install it is unaffected by its existence
+in every way - the plugin does not know this package exists until you name it
+in `medusa-config.ts`.
+
+## Install
+
+Like `@zanreal/medusa-usage` itself, this package is not on npm yet. It
+installs the same way, as a git dependency pinned to a commit:
+
+```jsonc title="package.json"
+{
+  "dependencies": {
+    "@zanreal/medusa-usage": "github:zanreal-labs/medusa-usage#2a260a4d04db6cc89986e0e9d25fcc2f60716b2f",
+    "@zanreal/medusa-usage-tinybird": "github:zanreal-labs/medusa-usage-tinybird#586fa2f3e505e575e516eb6818329e22bf963a44"
+  }
+}
+```
+
+Both entries need to be pinned commits for the same reason: there is no
+published tag on either repository yet, so `#main` would move under you on the
+next push. A pinned commit is the one specifier that means the same thing
+tomorrow that it means today - pin to whatever you actually tested against,
+not necessarily the two shown above.
+
+This package compiles itself on install, the same way its peer does - `prepare`
+runs `tsc`, which is what turns the checked-out TypeScript source into the
+`dist/` output its `exports` point at. pnpm 10 and newer refuse to run that
+script for a dependency it does not already trust, so a fresh install needs
+both packages allowed once:
+
+```yaml title="pnpm-workspace.yaml"
+allowBuilds:
+  "@zanreal/medusa-usage": true
+  "@zanreal/medusa-usage-tinybird": true
+```
+
+Then register it as a provider of the plugin, under whatever id you want it
+known by:
+
+```ts title="medusa-config.ts"
+plugins: [
+  {
+    resolve: "@zanreal/medusa-usage",
+    options: {
+      providers: [
+        {
+          resolve: "@zanreal/medusa-usage-tinybird",
+          id: "tinybird",
+          options: {
+            host: process.env.TINYBIRD_HOST,
+            token: process.env.TINYBIRD_TOKEN,
+          },
+        },
+      ],
+    },
+  },
+];
+```
+
+The `id` is yours to choose, not this package's name - it is what the plugin's
+own `sink` option selects on, and what appears in every snapshot's `sink`
+field. See the base plugin's [Sinks and configuration](https://github.com/zanreal-labs/medusa-usage/blob/main/docs/sinks.en.mdx)
+page for the rest of that contract, which this package implements without
+changing anything about it.
+
+## Deploy the schema this sink talks to
+
+The sink is one half of the design; the other half is the Tinybird schema it
+reads from and writes to, and the two only work correctly together. That
+schema ships in this repository under [`tinybird/`](https://github.com/zanreal-labs/medusa-usage-tinybird/tree/main/tinybird) -
+one data source and three endpoints, and nothing else:
+
+| Resource | File | What it is |
+| --- | --- | --- |
+| `usage_events` | `tinybird/datasources/usage_events.datasource` | The append-only log. `ReplacingMergeTree`, sorted `meter, subject, occurred_at, key`, partitioned by month of `occurred_at`. |
+| `usage_aggregate` | `tinybird/endpoints/usage_aggregate.pipe` | The total behind an invoice. |
+| `usage_events_list` | `tinybird/endpoints/usage_events_list.pipe` | The events behind that total, keyset paged. |
+| `usage_events_present` | `tinybird/endpoints/usage_events_present.pipe` | Which keys the log already has. |
+
+Deploy it before pointing a sink at it, with Tinybird's own CLI:
+
+```sh
+tb login       # or --host for a self-hosted instance
+tb --cloud deploy
+```
+
+**Deploy the schema in this repository rather than reimplementing it.** The
+read-time collapse described in [Exactly-once reads on a store with no primary
+key](./consistency.en.mdx) lives inside those `.pipe` files, specifically in
+their `GROUP BY key` node. Pointing this sink at a data source created some
+other way - a hand-written `MergeTree`, or an endpoint that skips that
+grouping - gives back a sink that double counts every retry, silently, because
+nothing in the TypeScript code enforces it. The guarantee is in the SQL, not in
+the client.
+
+The resource names are options rather than assumptions, so a workspace that
+already uses `usage_events` for something else can deploy this schema under
+different names and set `datasource`, `aggregatePipe`, `listPipe` and
+`presentPipe` on the provider to match. The `medusa_usage` token the four
+files declare carries exactly the grants the sink needs and no more: `APPEND`
+on the data source, `READ` on the three endpoints - nothing that could delete
+a row or read something else in the workspace.
+
+## Options
+
+Everything the sink needs comes from the provider's `options`, with an
+environment fallback for the two values that belong to a deployment rather
+than to a repository:
+
+| Option | Default | What it is |
+| --- | --- | --- |
+| `host` | `TINYBIRD_HOST` | The Tinybird API host, e.g. `https://api.tinybird.co`. |
+| `token` | `TINYBIRD_TOKEN` | A token with `APPEND` on the data source and `READ` on the endpoints. The `medusa_usage` token the schema declares is exactly that. |
+| `datasource` | `usage_events` | The usage log. |
+| `aggregatePipe` | `usage_aggregate` | The aggregate endpoint. |
+| `listPipe` | `usage_events_list` | The listing endpoint. |
+| `presentPipe` | `usage_events_present` | The key-lookup endpoint. |
+| `checkForDuplicates` | `true` | Ask which keys are already stored before appending. |
+| `timeoutMs` | `10000` | How long one HTTP call may take before it is abandoned and retried. |
+
+Every option is validated by Medusa's provider loader before the service is
+ever constructed, so a missing token is a failed boot with a sentence
+explaining what to set, not a `401` six hours into a billing period. The token
+itself is read once and put in an `Authorization` header - never in a URL,
+and never in an error message a log could capture verbatim.
+
+Note in every example above that the host is always `api.tinybird.co` (or
+your own Tinybird Local address for development). This sink talks to
+Tinybird's own infrastructure, or infrastructure you run yourself with
+Tinybird's tooling; it has no notion of anything else.
+
+### `checkForDuplicates`
+
+On by default, and worth the extra round trip for most deployments: it is what
+lets `write` report `duplicates` truthfully, and it means a retried batch
+appends nothing at all rather than a second copy of every row landing on disk.
+
+Turning it off halves the round trips per batch, and it **cannot cause a
+double count** - deduplication is enforced when the log is read, never when it
+is written, which is the whole subject of [the next
+page](./consistency.en.mdx). What it costs instead is honesty in the write
+counters (`duplicates` reads zero forever) and a log that accumulates physical
+copies of retried rows until a background merge clears them.
+
+## Where to go next
+
+- **[Exactly-once reads on a store with no primary key](./consistency.en.mdx)** -
+  why this sink's guarantee lives in the read path rather than the write path,
+  and exactly what stays eventual because of it.

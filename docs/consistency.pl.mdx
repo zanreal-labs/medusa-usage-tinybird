@@ -1,0 +1,186 @@
+---
+title: Odczyt dokładnie raz w magazynie bez klucza głównego
+description: "Dlaczego gwarancja co najwyżej jednego wiersza na klucz mieszka w tym sinku w ścieżce odczytu, a nie zapisu, dlaczego to nie jest obejście, i co dokładnie zostaje z tego powodu ewentualne."
+---
+
+Przeczytaj to, zanim zaufasz liczbie, którą zwraca ten sink. To jedyna
+własność, która nie przenosi się za darmo z wbudowanego sinka do Postgresa, a
+zrozumienie dlaczego mówi ci, którego zapytania bezpiecznie użyć do
+rozliczenia.
+
+## Co sink musi zagwarantować, powtórzone wprost
+
+Sam kontrakt sinka wtyczki wymaga „co najwyżej jednego wiersza na klucz
+deduplikacji” - ponowione wywołanie `write`, niosące te same zdarzenia, nie
+może dodać drugiego wiersza dla zdarzenia, które już trafiło do dziennika.
+Wbudowany sink do Postgresa zdobywa to wprost: klucz **jest** kluczem głównym
+wiersza, więc `INSERT ... ON CONFLICT DO NOTHING` zamienia ponowienie w
+operację bez skutku wewnątrz jednego atomowego polecenia, i gwarancja jest
+prawdziwa w chwili, gdy to polecenie wraca.
+
+## ClickHouse nie ma niczego, co grałoby tę samą rolę
+
+Źródła danych Tinybirda działają na ClickHouse, a ClickHouse w ogóle nie ma
+ograniczenia klucza głównego. Jego `ORDER BY` - klucz sortujący - decyduje o
+tym, jak wiersze są fizycznie ułożone na dysku pod kątem szybkiego skanowania
+zakresów; nie decyduje o tym, czy drugi wiersz o tym samym kluczu w ogóle
+może istnieć. Nic w silniku nie odmawia wstawienia duplikatu.
+
+Najbliższym mechanizmem jest `ReplacingMergeTree`, silnik zadeklarowany w
+`usage_events.datasource`. Zwija on wiersze dzielące klucz sortujący, ale
+tylko **podczas merge'ów w tle** - procesu utrzymaniowego, który odpala się,
+kiedy ClickHouse tak zdecyduje, na partiach, które sam wybierze do połączenia,
+w chwili, nad którą nikt wywołujący `write` nie ma kontroli. Dwie kopie
+ponowionego zdarzenia mogą leżeć na dysku razem przez minuty, przez godziny,
+albo - dla partycji, do której silnik nigdy się nie dobierze - w
+nieskończoność.
+
+Więc uczciwe, pełne stwierdzenie o samym `ReplacingMergeTree` brzmi:
+**ewentualny**. Sink zbudowany na niczym poza tym silnikiem liczy podwójnie
+każde ponowienie, dopóki jakiś merge się nie odpali, a dla liczby, która
+zamienia się w pozycję na fakturze, „ostatecznie poprawne” to nie jest
+drobna niedoskonałość do odnotowania mimochodem - to dokładnie ta awaria,
+przed którą cała ta wtyczka, i ten sink, mają chronić.
+
+## Co robi ten sink zamiast tego: wymusza gwarancję tam, gdzie dziennik jest czytany
+
+Deduplikacja jest tu wymuszana w momencie zapytania, nie w momencie zapisu.
+Każdy endpoint, który wywołuje ten sink, zwija się do jednego wiersza na klucz
+**zanim cokolwiek zsumuje**, we własnym SQL-u tego endpointu:
+
+```sql
+SELECT key, argMax(quantity, version) AS event_quantity, ...
+FROM usage_events
+WHERE ...
+GROUP BY key
+```
+
+Ten kolaps nie jest ewentualny - jest liczony na świeżo, nad tym, co akurat
+istnieje w tabeli dokładnie w chwili, gdy zapytanie się wykonuje. Duplikat,
+który wylądował na dysku milisekundę wcześniej, jest już zwinięty do jednego
+wiersza przez to `GROUP BY`, bo zapytaniu nie zależy, ile fizycznych kopii
+istnieje - zawsze zwraca dokładnie jeden logiczny wiersz na klucz.
+`aggregate()` wywołane od razu po ponowionym `write()` zwraca dokładnie tę
+samą liczbę, co zwróciło przed tym ponowieniem - i to jest sprawdzone wprost
+na działającym Tinybirdzie, a nie wywiedzione z zasad ogólnych: zobacz
+[Testowanie tej części, która ma znaczenie](#testowanie-tej-czesci-ktora-ma-znaczenie).
+
+## `version` decyduje, która kopia wygrywa, i jest dobrane tak, żeby zgadzać się z Postgresem
+
+`argMax(quantity, version)` potrzebuje `version`, żeby rozstrzygnąć między
+duplikatami wierszy, a schemat przypisuje go jako **negowany znacznik czasu
+przyjęcia**:
+
+```text
+version = -toUnixTimestamp64Milli(recorded_at)
+```
+
+Negacja sprawia, że *największa* wartość `version` - wiersz, który
+zatrzymuje zarówno `argMax` przy odczycie, jak i `ReplacingMergeTree` przy
+merge'u - to wiersz o *najmniejszym* `recorded_at`: kopia
+**najwcześniej przyjęta**. To nie jest przypadkowy wybór. To dokładnie ten
+wiersz, który zatrzymuje wbudowany sink do Postgresa, bo `INSERT ... ON
+CONFLICT DO NOTHING` zawsze zatrzymuje tę kopię, która dotarła pierwsza, i
+po cichu odrzuca każdą kolejną próbę. Wybranie tej samej reguły tutaj sprawia,
+że oba sinki odpowiadają identycznie na tę samą sekwencję ponowień, i sprawia,
+że odpowiedź tego sinka nie zależy od tego, kiedy - ani czy w ogóle - odpalił
+się jakiś merge w tle: merge wybiera spośród wierszy, które ścieżka odczytu i
+tak już ignorowała.
+
+Zarówno `recorded_at`, jak i `version` są przypisywane przez sam Tinybird w
+chwili przyjęcia wiersza, nigdy wysyłane przez sink. Jeden zegar decyduje o
+kolejności przyjęcia, dokładnie tak, jak robi to własne `now()` Postgresa dla
+wbudowanego sinka - co pozwala flocie instancji Medusy z zegarami rozjechanymi
+o kilka sekund wciąż zgadzać się co do tego, która kopia zdarzenia przyszła
+pierwsza.
+
+## Dlaczego to nie jest obejście
+
+Nazwanie kolapsu na odczycie prowizorką na brakującą funkcję bazy byłoby
+błędnym sposobem myślenia o tym, a komentarze samego schematu w
+`usage_events.datasource` tłumaczą dlaczego: obie reguły - silnik
+`ReplacingMergeTree` i `GROUP BY key` w każdym endpoincie - są dobrane tak,
+żeby **zgadzać się ze sobą nawzajem**, i ta zgodność jest właściwą własnością,
+na której sink się opiera, a nie nagrodą pocieszenia za brak klucza głównego.
+
+**Merge może tylko usunąć wiersz, który ścieżka odczytu i tak już
+odrzucała.** Ponieważ oba mechanizmy zatrzymują najwcześniej przyjętą kopię,
+pod tą samą regułą `version`, merge zwijający dwa fizyczne wiersze w jeden
+nigdy nie zmienia tego, który logiczny wiersz zgłosiłby endpoint - po prostu
+usuwa coś, co i tak już było niewidoczne dla każdego zapytania. Odpowiedź
+policzona dzisiaj i ta sama odpowiedź policzona ponownie po dowolnej liczbie
+merge'ów, jakie odbyły się od tamtej pory, są więc identyczne, co jest
+dokładnie tą własnością, jakiej potrzebuje dziennik zużycia, żeby dało się go
+zaudytować za rok. Merge jest optymalizacją przechowywania, kropka: mniej
+bajtów do przeskanowania, nie inna odpowiedź.
+
+Zestaw to z kształtem prawdziwego obejścia - deduplikowaniem w kodzie
+aplikacji, który wywołuje `aggregate()`, albo cyklicznym zapytaniem
+sprzątającym, które usuwa oczywiste duplikaty. Oba ścigałyby się ze ścieżką
+zapisu i wciąż byłyby błędne w luce, zanim by się odpaliły. Wymuszenie tej
+własności w ścieżce odczytu usuwa wyścig, zamiast go zwężać: nie ma okna,
+choćby najmniejszego, w którym dwa działające zapytania do tego sinka
+mogłyby nie zgadzać się co do wkładu jednego zdarzenia w sumę.
+
+## Co zostaje ewentualne, powiedziane równie wprost jak powyższa gwarancja
+
+Precyzyjne określenie granicy gwarancji jest tym, co czyni ją wiarygodną. Trzy
+rzeczy naprawdę nie mają tej samej własności natychmiastowej poprawności, i
+każda z nich jest albo nieistotna dla rozliczenia, albo ograniczona do
+pojedynczego optymistycznego liczenia:
+
+- **Sam fizyczny dziennik.** Między duplikatem zapisu a jakimkolwiek merge'em,
+  który się w końcu odpali, dwa wiersze dla tego samego klucza mogą razem
+  leżeć na dysku, i `SELECT count()` puszczone bezpośrednio na źródło danych
+  `usage_events` to pokaże - to nie jest błąd, to odpowiedź na inne pytanie
+  niż zadaje `aggregate()`. **Nigdy nie rozliczaj z zapytania bezpośrednio do
+  źródła danych.** Trzy endpointy są tym kolapsem i to one są jedyną
+  wspieraną ścieżką odczytu tego sinka; dashboard zbudowany na zapytaniach
+  wprost do źródła danych nie zgodzi się z fakturą, i słusznie, bo policzy
+  wiersze, których faktura nigdy nie policzyła.
+- **Liczniki po stronie zapisu.** `duplicates`, w tym, co zwraca `write()`,
+  powstaje przez sprawdzenie, które klucze są już obecne, tuż przed
+  dopisaniem - sprawdzenie, a potem działanie. Dwa procesy ścigające się o
+  zapis dokładnie tego samego klucza w dokładnie tej samej chwili mogą oba
+  znaleźć go nieobecnym i oba go dopisać, co czyni raportowane liczniki
+  optymistycznymi dokładnie o jeden w tym wąskim oknie. Nic poza tym tego nie
+  dotyka: dwa wiersze, które wylądują, to identyczne kopie tego samego
+  zdarzenia, a ścieżka odczytu i tak zatrzymuje jeden z nich. To skaza na
+  liczniku diagnostycznym, nie na rozliczonej sumie.
+- **Która kopia klucza wygrywa, tam gdzie w ogóle jest to widoczne.** Obie
+  reguły zatrzymują najwcześniej przyjętą kopię, więc to staje się widoczne
+  tylko wtedy, gdy wywołujący użyje jednego jawnego `idempotencyKey` dla
+  dwóch zdarzeń niosących naprawdę różne fakty - co jest błędem wywołującego
+  pod każdym z sinków, a nie czymś, co ten pakiet mógłby wykryć albo powinien
+  wygładzić.
+
+Nic w `aggregate()` ani `listEvents()` nie zależy od tego, czy odpalił się
+merge, ani od tego, czy sprawdzenie duplikatów przed zapisem zgadło
+poprawnie. Oba są poprawne względem tego, co tabela zawiera w chwili
+wywołania, co jest właściwym twierdzeniem, do którego zmierzała cała ta
+strona.
+
+## Testowanie tej części, która ma znaczenie
+
+Udawany backend Tinybirda potrafi udowodnić, co wychodzi na przewód i co z
+niego wraca, i pakiet testów jednostkowych dokładnie to robi. Nie potrafi
+udowodnić jednej własności, o której jest ta strona, bo ta własność należy do
+prawdziwego silnika po drugiej stronie wywołania HTTP, nie do kodu tego
+pakietu.
+
+Więc `src/live.test.ts` pisze do prawdziwego Tinybirda i czyta odpowiedź z
+powrotem, pomijane automatycznie, chyba że środowisko nazwie jakiś:
+
+```sh
+tb local start
+tb --local build
+TINYBIRD_HOST=http://localhost:7181 TINYBIRD_TOKEN=... pnpm test
+```
+
+Co tam jest sprawdzane, na prawdziwym silniku, a nie na opisie silnika: że
+zapis można zagregować w chwili, gdy wraca; że powtórzenie identycznej paczki
+nie rusza sumy; że duplikat, który *faktycznie* wylądował jako drugi fizyczny
+wiersz na dysku, i tak nie rusza sumy; że okno jest półotwarte z dokładnością
+do milisekundy, a kolejne okresy sklejają się bez luki i bez nakładania; że
+filtr po wymiarze jest typowaną równością; i że stronicowanie nigdy nie
+pomija ani nie powtarza wiersza.
