@@ -1,0 +1,65 @@
+DESCRIPTION >
+    Usage for one meter, optionally one subject, over a half-open window of event
+    time. The question an invoice is derived from.
+
+    The window is `[date_from, date_to)`: `date_from` inclusive, `date_to`
+    exclusive, so consecutive periods tile without the event on the boundary
+    being counted in both. Both are ISO 8601 instants; a string carrying no
+    offset is read as UTC rather than as the server's zone.
+
+    `total` and `event_count` come back as strings. A quantity is an Int64 and a
+    sum of them can pass 2^53, where a JSON number stops being able to represent
+    every integer. The caller parses the string and refuses a total it cannot
+    hold exactly, which is a visible failure rather than a silently rounded
+    invoice.
+
+TOKEN "medusa_usage" READ
+
+NODE collapse
+DESCRIPTION >
+    One row per event key, before anything is summed.
+
+    This is what makes "at most one row per key" true the moment a duplicate is
+    written rather than whenever a background merge runs. `argMax(..., version)`
+    picks the earliest-ingested copy, the same copy `ReplacingMergeTree` keeps,
+    so the answer here does not change when a merge collapses the rows on disk.
+
+    The window filter is applied before the collapse so the read stays on the
+    sorting key's prefix. The only case where that differs from collapsing first
+    is a key whose copies carry different `occurred_at` values that straddle a
+    period boundary, which requires a caller to have reused an explicit
+    idempotency key across events with different facts.
+SQL >
+    %
+    SELECT
+        key,
+        argMax(quantity, version) AS event_quantity,
+        argMax(occurred_at, version) AS event_occurred_at
+    FROM usage_events
+    WHERE
+        meter = {{String(meter, required=True, description='The meter to aggregate, compared byte for byte.')}}
+        AND occurred_at >= parseDateTime64BestEffort({{String(date_from, '1970-01-01T00:00:00.000Z', required=True, description='Inclusive lower bound on event time, ISO 8601.')}}, 3, 'UTC')
+        AND occurred_at < parseDateTime64BestEffort({{String(date_to, '1970-01-01T00:00:00.000Z', required=True, description='Exclusive upper bound on event time, ISO 8601.')}}, 3, 'UTC')
+        {% if defined(subject) %}
+        AND subject = {{String(subject, description='Restrict to one subject. Omitted, every subject on the meter is aggregated.')}}
+        {% end %}
+        {% if defined(property_keys) %}
+        AND arrayAll(
+            i ->
+                JSONHas(properties, {{Array(property_keys, 'String', description='Dimension names to filter on, positionally paired with property_values.')}}[i])
+                AND JSONExtractRaw(properties, {{Array(property_keys, 'String')}}[i]) = {{Array(property_values, 'String', description='Canonical JSON of each dimension value: strings quoted, numbers bare.')}}[i],
+            range(1, length({{Array(property_keys, 'String')}}) + 1)
+        )
+        {% end %}
+    GROUP BY key
+
+NODE endpoint
+SQL >
+    SELECT
+        toString(sum(event_quantity)) AS total,
+        toString(count()) AS event_count,
+        toUnixTimestamp64Milli(minOrNull(event_occurred_at)) AS first_occurred_at,
+        toUnixTimestamp64Milli(maxOrNull(event_occurred_at)) AS last_occurred_at
+    FROM collapse
+
+TYPE ENDPOINT

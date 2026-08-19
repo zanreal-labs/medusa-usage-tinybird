@@ -34,10 +34,38 @@ plugins: [
 ]
 ```
 
-The data project the sink reads and writes lives in
-[`zanreal-labs/medusa-tinybird`](https://github.com/zanreal-labs/medusa-tinybird):
-one data source and three endpoints, deployed by that repository's own CI. Deploy
-it before pointing a sink at it.
+## The schema this sink talks to
+
+The sink is one half of the design; the other half is the Tinybird schema it
+reads and writes, and the two only work together. That schema ships in this
+repository under [`tinybird/`](./tinybird) - one data source and three endpoints,
+and nothing else:
+
+| Resource | File | What it is |
+| --- | --- | --- |
+| `usage_events` | [`tinybird/datasources/usage_events.datasource`](./tinybird/datasources/usage_events.datasource) | The append-only log. `ReplacingMergeTree`, sorted `meter, subject, occurred_at, key`, partitioned by month of `occurred_at`. |
+| `usage_aggregate` | [`tinybird/endpoints/usage_aggregate.pipe`](./tinybird/endpoints/usage_aggregate.pipe) | The total behind an invoice. |
+| `usage_events_list` | [`tinybird/endpoints/usage_events_list.pipe`](./tinybird/endpoints/usage_events_list.pipe) | The events behind that total, keyset paged. |
+| `usage_events_present` | [`tinybird/endpoints/usage_events_present.pipe`](./tinybird/endpoints/usage_events_present.pipe) | Which keys the log already has. |
+
+Deploy it before pointing a sink at it, with Tinybird's own CLI:
+
+```sh
+tb login                 # or --host for a self-hosted instance
+tb --cloud deploy
+```
+
+The read-time collapse described below lives in those `.pipe` files, so pointing
+this sink at a data source that was created some other way - a hand-written
+`MergeTree`, or an endpoint that does not `GROUP BY key` - gives back a sink that
+double counts every retry. Deploy the schema in this repository rather than
+reimplementing it.
+
+The names are options, so a workspace that already uses them for something else
+can deploy under different ones and set `datasource`, `aggregatePipe`, `listPipe`
+and `presentPipe` to match. The `medusa_usage` token the four files declare carries
+exactly the grants the sink needs: `APPEND` on the data source, `READ` on the
+three endpoints.
 
 ## At most one row per key
 
@@ -110,8 +138,8 @@ it back is redacted before it reaches a message.
 
 | Option | Default | What it is |
 | --- | --- | --- |
-| `host` | `TINYBIRD_HOST` | The Tinybird API host, e.g. `https://data.zanreal.com`. |
-| `token` | `TINYBIRD_TOKEN` | A token with `APPEND` on the data source and `READ` on the endpoints. The data project's `medusa_usage` token is exactly that. |
+| `host` | `TINYBIRD_HOST` | The Tinybird API host, e.g. `https://api.tinybird.co`. |
+| `token` | `TINYBIRD_TOKEN` | A token with `APPEND` on the data source and `READ` on the endpoints. The `medusa_usage` token the schema declares is exactly that. |
 | `datasource` | `usage_events` | The usage log. |
 | `aggregatePipe` | `usage_aggregate` | The aggregate endpoint. |
 | `listPipe` | `usage_events_list` | The listing endpoint. |
@@ -151,7 +179,7 @@ environment names one:
 
 ```sh
 tb local start
-cd ../medusa-tinybird && tb --local build
+tb --local build
 TINYBIRD_HOST=http://localhost:7181 TINYBIRD_TOKEN=... pnpm test
 ```
 

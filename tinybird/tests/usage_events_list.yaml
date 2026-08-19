@@ -1,0 +1,52 @@
+
+- name: august_for_one_subject_oldest_first
+  description: The three events behind the August total for cus_1, in event-time order.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z&page_size=10
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000002","meter":"api_request","subject":"cus_1","quantity":"25","occurred_at":1785542400000,"source":"gateway","properties":"{\"region\":\"eu\"}","recorded_at":1787043600000}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000003","meter":"api_request","subject":"cus_1","quantity":"5","occurred_at":1786795200000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000004","meter":"api_request","subject":"cus_1","quantity":"-5","occurred_at":1786795201000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+
+- name: a_replayed_event_appears_once
+  description: Event 2 is in the log twice, byte for byte. The listing that proves
+    a total shows it once, or it would not prove the total.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-01T00:00:00.000Z&date_to=2026-08-01T00:00:00.001Z&page_size=10
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000002","meter":"api_request","subject":"cus_1","quantity":"25","occurred_at":1785542400000,"source":"gateway","properties":"{\"region\":\"eu\"}","recorded_at":1787043600000}
+
+- name: the_earliest_copy_of_a_key_is_the_one_listed
+  description: Event 3 was replayed with a quantity of 999. The row that counts, and
+    the row shown, is the 5 that arrived first.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-15T00:00:00.000Z&date_to=2026-08-15T12:00:00.001Z&page_size=10
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000003","meter":"api_request","subject":"cus_1","quantity":"5","occurred_at":1786795200000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+
+- name: first_page
+  description: Two rows of the three, so there is a page after this one.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z&page_size=2
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000002","meter":"api_request","subject":"cus_1","quantity":"25","occurred_at":1785542400000,"source":"gateway","properties":"{\"region\":\"eu\"}","recorded_at":1787043600000}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000003","meter":"api_request","subject":"cus_1","quantity":"5","occurred_at":1786795200000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+
+- name: second_page_resumes_after_the_cursor
+  description: |
+    Keyset paging on (occurred_at, key), the total order the log is listed in. Resuming from the last row of the first page yields the third event and no repeat of the second.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z&page_size=2&cursor_occurred_at=2026-08-15T12:00:00.000Z&cursor_key=uev_0000000000000000000000000000000000000000000000000000000000000003
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000004","meter":"api_request","subject":"cus_1","quantity":"-5","occurred_at":1786795201000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+
+- name: a_correction_is_listed_as_its_own_event
+  description: The minus 5 is an event in its own right, not an edit of the 5 it reverses.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-15T12:00:00.001Z&date_to=2026-08-16T00:00:00.000Z&page_size=10
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000004","meter":"api_request","subject":"cus_1","quantity":"-5","occurred_at":1786795201000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+
+- name: every_subject_on_the_meter
+  description: No subject means the whole meter, still ordered by event time across
+    subjects.
+  parameters: meter=api_request&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z&page_size=10
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000002","meter":"api_request","subject":"cus_1","quantity":"25","occurred_at":1785542400000,"source":"gateway","properties":"{\"region\":\"eu\"}","recorded_at":1787043600000}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000003","meter":"api_request","subject":"cus_1","quantity":"5","occurred_at":1786795200000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000004","meter":"api_request","subject":"cus_1","quantity":"-5","occurred_at":1786795201000,"source":null,"properties":"{\"region\":\"us\",\"tier\":2}","recorded_at":1787043600000}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000005","meter":"api_request","subject":"cus_2","quantity":"100","occurred_at":1787184000000,"source":null,"properties":"","recorded_at":1787043600000}

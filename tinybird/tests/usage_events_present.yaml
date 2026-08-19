@@ -1,0 +1,28 @@
+
+- name: reports_only_the_keys_it_has
+  description: Two keys asked for, one of them in the log. The sink appends the other
+    and reports the first as a duplicate.
+  parameters: keys=uev_0000000000000000000000000000000000000000000000000000000000000002,uev_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff&date_from=2026-08-01T00:00:00.000Z&date_to=2026-08-01T00:00:00.000Z
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000002"}
+
+- name: a_wholly_new_batch_is_empty
+  description: Nothing comes back, so the sink appends every event and reports no
+    duplicates.
+  parameters: keys=uev_ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z
+  expected_result: ''
+
+- name: a_replayed_batch_comes_back_whole
+  description: The retry case. Every key is already there, so the retry appends nothing
+    at all.
+  parameters: keys=uev_0000000000000000000000000000000000000000000000000000000000000002,uev_0000000000000000000000000000000000000000000000000000000000000003,uev_0000000000000000000000000000000000000000000000000000000000000004&date_from=2026-08-01T00:00:00.000Z&date_to=2026-08-15T12:00:01.000Z
+  expected_result: |
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000002"}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000003"}
+    {"key":"uev_0000000000000000000000000000000000000000000000000000000000000004"}
+
+- name: the_batch_bounds_prune_by_partition
+  description: |
+    The lookup is bounded by the batch's own event times. A key stored outside those bounds is reported missing and appended a second time, which the read-time collapse absorbs. Stated as a test so the trade is not a surprise.
+  parameters: keys=uev_0000000000000000000000000000000000000000000000000000000000000006&date_from=2026-08-01T00:00:00.000Z&date_to=2026-08-31T23:59:59.999Z
+  expected_result: ''

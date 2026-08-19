@@ -44,7 +44,7 @@ const fakeFetch = vi.fn(async (url: string | URL, init?: RequestInit) => {
 const sink = (options: Record<string, unknown> = {}) =>
   new TinybirdUsageSinkService(
     {},
-    { host: "https://data.zanreal.test", token: TOKEN, ...options },
+    { host: "https://api.tinybird.test", token: TOKEN, ...options },
   );
 
 const event = (overrides: Record<string, unknown> = {}) =>
@@ -96,7 +96,7 @@ describe("credentials", () => {
       subject: "cus_1",
       to: new Date("2026-09-01T00:00:00.000Z"),
     });
-    expect(calls[0].url).toBe("https://data.zanreal.test/v0/pipes/usage_aggregate.json");
+    expect(calls[0].url).toBe("https://api.tinybird.test/v0/pipes/usage_aggregate.json");
     expect(calls[0].body).toMatchObject({ meter: "api_request", subject: "cus_1" });
   });
 });

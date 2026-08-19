@@ -25,6 +25,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "tinybird",
     "LICENSE",
     "README.md"
   ],
@@ -50,7 +51,7 @@
     "@medusajs/framework": "2.18.0",
     "@types/node": "^20.0.0",
     "@vitest/coverage-v8": "^3.2.7",
-    "@zanreal/medusa-usage": "workspace:*",
+    "@zanreal/medusa-usage": "github:zanreal-labs/medusa-usage#main",
     "eslint": "^9.0.0",
     "jiti": "^2.0.0",
     "typescript": "^5.6.2",

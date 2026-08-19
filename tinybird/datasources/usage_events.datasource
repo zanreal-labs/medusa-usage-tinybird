@@ -1,0 +1,108 @@
+DESCRIPTION >
+    The append-only metered usage log written by the `@zanreal/medusa-usage`
+    Tinybird sink. One row is one immutable statement of fact: this much of this
+    meter was consumed by this subject at this instant.
+
+    Nothing here is ever updated or deleted. A mistake is corrected by appending
+    its reversal, an event with a negative `quantity`, exactly like a ledger, so
+    that a number computed today can be recomputed from the same rows in a year.
+
+    ## `key` is the identity of the event, and the engine collapses on it
+
+    `key` is a SHA-256 over what the event means, derived by the plugin, so a
+    retried request, a replayed queue message or a backfill run twice produce the
+    identical key. The sink's contract is at most one row per key.
+
+    ClickHouse has no primary key constraint, so that guarantee is built from two
+    halves that agree with each other:
+
+    - the engine is `ReplacingMergeTree` over a sorting key that ends in `key`,
+      so a background merge collapses identical rows. Merges are eventual: two
+      copies of one event can both be on disk for minutes or hours;
+    - every endpoint therefore collapses again at read time, `GROUP BY key` with
+      `argMax(..., version)`. That is what makes the guarantee hold the instant a
+      duplicate lands, rather than whenever a merge happens to run.
+
+    The two rules pick the same row, which is the property that matters: a merge
+    can only ever remove a row the read path was already discarding, so an answer
+    cannot change under it.
+
+    ## `version` decides which copy wins, and picks the first one
+
+    `version` is the negated ingestion timestamp, so the *largest* version, the
+    row `ReplacingMergeTree` keeps and the row `argMax` picks, is the *earliest*
+    ingested. That matches the built-in Postgres sink, where the append is
+    `INSERT ... ON CONFLICT DO NOTHING` and the first write of a key is the one
+    that survives.
+
+    It only becomes observable when a caller reuses an explicit `idempotencyKey`
+    across events with different facts, which is a caller bug in either sink. It
+    is pinned rather than left to merge order so that the two sinks answer the
+    same, and so that the answer does not depend on when a merge ran.
+
+    Both `recorded_at` and `version` are assigned by Tinybird, not sent by the
+    sink: one clock decides ingestion order, the way `now()` does in Postgres.
+    A fleet of Medusa instances with skewed clocks cannot disagree about which
+    copy of an event arrived first.
+
+    ## The sorting key
+
+    `meter, subject, occurred_at, key`, partitioned by month of `occurred_at`.
+
+    - It ends in `key`, so the tuple is unique per event and the engine can
+      collapse on it.
+    - Its prefix is the invoice question: one meter, one subject, one half-open
+      window of event time. That query reads a contiguous range and nothing else.
+    - The meter-wide question skips `subject`, so it cannot use the sorting key
+      past the first column. The monthly partition is what keeps it cheap: a
+      billing window is a month, so it touches one or two partitions instead of
+      the whole log.
+
+    `occurred_at` is event time, the only column any endpoint filters on.
+    `recorded_at` is when Tinybird accepted the row and is never a filter:
+    filtering on it would let a late-arriving batch change an answer that had
+    already been given.
+
+    ## `properties` is canonical JSON, as one string
+
+    Dimensions are stored as the canonical JSON text of the whole bag, keys
+    sorted, no whitespace: `{"region":"eu","tier":2}`. An event with no
+    properties stores the empty string.
+
+    It is the same text the plugin hashes into the deduplication key, produced by
+    the same function, so the bag that was keyed and the bag that was stored
+    cannot drift apart. A filter compares a dimension with `JSONExtractRaw`,
+    which returns that value's own canonical text, and that is what makes the
+    filter typed: `tier = 2` and `tier = "2"` are different filters matching
+    different events, exactly as they are under the Postgres sink's `jsonb`
+    containment.
+
+    A `Map(String, String)` would be the more idiomatic ClickHouse choice and was
+    the first shape here. It was withdrawn because a map's contents turned out to
+    depend on how the rows were loaded: appending the same NDJSON through the
+    data sources API rather than the events API filled every row's map with the
+    union of the keys in the file, giving events an empty-string dimension they
+    never carried. A column whose value depends on which door the data came in is
+    not one to keep a billing record in. A string is the same bytes down every
+    path.
+
+TOKEN "medusa_usage" APPEND
+
+SCHEMA >
+    `key` String `json:$.key`,
+    `meter` LowCardinality(String) `json:$.meter`,
+    `subject` String `json:$.subject`,
+    `quantity` Int64 `json:$.quantity`,
+    `occurred_at` DateTime64(3) `json:$.occurred_at`,
+    `source` Nullable(String) `json:$.source`,
+    `properties` String `json:$.properties`,
+    `recorded_at` DateTime64(3) `json:$.recorded_at` DEFAULT now64(3),
+    `version` Int64 `json:$.version` DEFAULT -toUnixTimestamp64Milli(recorded_at)
+
+ENGINE "ReplacingMergeTree"
+ENGINE_PARTITION_KEY "toYYYYMM(occurred_at)"
+ENGINE_SORTING_KEY "meter, subject, occurred_at, key"
+ENGINE_VER "version"
+
+INDEXES >
+    INDEX idx_usage_events_key key TYPE bloom_filter GRANULARITY 1

@@ -1,0 +1,57 @@
+name: CI
+
+# Modelled on the workflow in zanreal-labs/medusa-usage, minus that repository's
+# migration guard: this package has no data models and no migrations. It is a
+# provider talking to Tinybird over HTTP, and the schema under tinybird/ is
+# deployed by Tinybird's own CLI rather than by a Medusa migration. Add a guard
+# here if a model is ever introduced.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # @zanreal/medusa-usage is a github: dependency rather than a registry one,
+      # so this step clones it. It is a public repository, so no token is needed.
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm exec medusa lint src
+
+      - name: Typecheck
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+
+      # src/live.test.ts is skipped unless TINYBIRD_HOST and TINYBIRD_TOKEN are
+      # set, so what runs here is the fake-backed suite. The live suite is the
+      # only place the read-time collapse is actually proven, and it is run by
+      # hand against Tinybird Local - see "Testing" in the README.
+      - name: Test
+        run: pnpm exec vitest run
+
+      # Compiles src to dist. This is the step that catches a broken export map,
+      # which no other check can see.
+      - name: Build
+        run: pnpm exec tsc -p tsconfig.json

@@ -1,0 +1,37 @@
+DESCRIPTION >
+    Which of these event keys is already in the log.
+
+    The sink calls this immediately before it appends a batch, and appends only
+    the keys that come back missing. Two things fall out of that:
+
+    - a retry of a batch that already landed writes nothing at all, so the
+      physical duplicates the read-time collapse has to hide stay rare;
+    - `write` can report `appended` and `duplicates` truthfully. Tinybird's
+      ingestion endpoint reports rows accepted, and cannot report rows that
+      turned out to be copies, because the collapse has not happened yet.
+
+    It is a check-then-append, so it is racy by construction: two processes can
+    both find a key missing and both append it. That is harmless here and it is
+    worth being exact about why. The keys are derived from the events, the copies
+    are therefore identical, and both the engine merge and every endpoint's
+    `GROUP BY key` keep exactly one of them. The check is an optimisation and an
+    honest counter, never the thing that enforces the guarantee.
+
+    `date_from` and `date_to` bound the batch's own event times so the lookup
+    prunes to the partitions the batch can be in. A key stored under an
+    `occurred_at` outside that range is missed and appended a second time, which
+    the collapse absorbs.
+
+TOKEN "medusa_usage" READ
+
+NODE endpoint
+SQL >
+    %
+    SELECT DISTINCT key
+    FROM usage_events
+    WHERE
+        key IN {{Array(keys, 'String', required=True, description='Event keys to look for.')}}
+        AND occurred_at >= parseDateTime64BestEffort({{String(date_from, '1970-01-01T00:00:00.000Z', required=True, description='Earliest event time in the batch, ISO 8601.')}}, 3, 'UTC')
+        AND occurred_at <= parseDateTime64BestEffort({{String(date_to, '1970-01-01T00:00:00.000Z', required=True, description='Latest event time in the batch, ISO 8601. Inclusive: this bounds a set of known instants, not a reporting period.')}}, 3, 'UTC')
+
+TYPE ENDPOINT

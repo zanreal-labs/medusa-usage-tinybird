@@ -17,7 +17,7 @@ import TinybirdUsageSinkService from "./service";
  * on a laptop with no Tinybird still passes. Point it at Tinybird Local:
  *
  *     tb local start
- *     cd ../medusa-tinybird && tb --local build
+ *     tb --local build
  *     TINYBIRD_HOST=http://localhost:7181 TINYBIRD_TOKEN=... pnpm test
  *
  * Every case meters a freshly generated meter name, so a run appends to the log

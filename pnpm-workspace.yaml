@@ -1,0 +1,11 @@
+# Standalone install configuration. This package is a git submodule of
+# zanreal-labs/medusa, and inside that workspace the root file governs instead -
+# pnpm reads the nearest workspace root, which there is the monorepo's. This one
+# is what a fresh clone of THIS repository uses, and without it pnpm blocks the
+# postinstall builds that `medusa plugin:build` needs.
+allowBuilds:
+  "@medusajs/telemetry": false
+  "@swc/core": true
+  esbuild: true
+  msgpackr-extract: true
+  protobufjs: true

@@ -1,0 +1,73 @@
+
+- name: august_for_one_subject
+  description: The invoice question. 25 plus 5 plus the minus 5 correction is 25 over
+    three events.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z
+  expected_result: |
+    {"total":"25","event_count":"3","first_occurred_at":1785542400000,"last_occurred_at":1786795201000}
+
+- name: window_is_half_open_at_the_start
+  description: The event at exactly 2026-08-01T00:00:00.000Z is inside August.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-01T00:00:00.000Z&date_to=2026-08-01T00:00:00.001Z
+  expected_result: |
+    {"total":"25","event_count":"1","first_occurred_at":1785542400000,"last_occurred_at":1785542400000}
+
+- name: window_is_half_open_at_the_end
+  description: The same event is outside July, whose exclusive upper bound is that
+    instant.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-07-31T23:59:59.999Z&date_to=2026-08-01T00:00:00.000Z
+  expected_result: |
+    {"total":"10","event_count":"1","first_occurred_at":1785542399999,"last_occurred_at":1785542399999}
+
+- name: periods_tile_without_overlapping
+  description: September starts where August ended, and the boundary event is counted
+    once, in September.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-09-01T00:00:00.000Z&date_to=2026-10-01T00:00:00.000Z
+  expected_result: |
+    {"total":"7","event_count":"1","first_occurred_at":1788220800000,"last_occurred_at":1788220800000}
+
+- name: a_replayed_event_is_not_counted_twice
+  description: Event 2 is in the log twice, byte for byte, ingested an hour apart.
+    It counts once.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-01T00:00:00.000Z&date_to=2026-08-01T00:00:00.001Z
+  expected_result: |
+    {"total":"25","event_count":"1","first_occurred_at":1785542400000,"last_occurred_at":1785542400000}
+
+- name: the_earliest_copy_of_a_key_wins
+  description: |
+    Event 3 is in the log twice under one key with different quantities, 5 then 999. The earliest ingested copy is the one that counts, so the total is 5 and not 999, exactly as it would be under the Postgres sink's INSERT ... ON CONFLICT DO NOTHING.
+  parameters: meter=api_request&subject=cus_1&date_from=2026-08-15T12:00:00.000Z&date_to=2026-08-15T12:00:00.001Z
+  expected_result: |
+    {"total":"5","event_count":"1","first_occurred_at":1786795200000,"last_occurred_at":1786795200000}
+
+- name: every_subject_on_the_meter
+  description: No subject means the whole meter. 25 for cus_1 plus 100 for cus_2.
+  parameters: meter=api_request&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z
+  expected_result: |
+    {"total":"125","event_count":"4","first_occurred_at":1785542400000,"last_occurred_at":1787184000000}
+
+- name: a_dimension_filter_is_an_equality
+  description: region "eu" matches the one August event carrying it.
+  parameters: meter=api_request&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z&property_keys=region&property_values=%22eu%22
+  expected_result: |
+    {"total":"25","event_count":"1","first_occurred_at":1785542400000,"last_occurred_at":1785542400000}
+
+- name: a_dimension_filter_is_typed
+  description: tier is the number 2, so the string "2" does not match it.
+  parameters: meter=api_request&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z&property_keys=tier&property_values=%222%22
+  expected_result: |
+    {"total":"0","event_count":"0","first_occurred_at":null,"last_occurred_at":null}
+
+- name: an_event_missing_the_dimension_does_not_match
+  description: cus_2's event carries no properties at all, so no filter on any dimension
+    can match it.
+  parameters: meter=api_request&subject=cus_2&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z&property_keys=region&property_values=%22eu%22
+  expected_result: |
+    {"total":"0","event_count":"0","first_occurred_at":null,"last_occurred_at":null}
+
+- name: an_empty_window_is_zero_and_not_null
+  description: A meter nobody used answers zero over zero events, with no first or
+    last instant.
+  parameters: meter=gb_egress&date_from=2026-08-01T00:00:00.000Z&date_to=2026-09-01T00:00:00.000Z
+  expected_result: |
+    {"total":"0","event_count":"0","first_occurred_at":null,"last_occurred_at":null}

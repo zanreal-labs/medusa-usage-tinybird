@@ -27,15 +27,15 @@ afterEach(() => {
 
 describe("resolveTinybirdOptions", () => {
   it("takes the host and token from options", () => {
-    const resolved = resolveTinybirdOptions({ host: "https://data.zanreal.com", token: TOKEN });
-    expect(resolved.host).toBe("https://data.zanreal.com");
+    const resolved = resolveTinybirdOptions({ host: "https://api.tinybird.co", token: TOKEN });
+    expect(resolved.host).toBe("https://api.tinybird.co");
     expect(resolved.token).toBe(TOKEN);
   });
 
   it("falls back to the environment", () => {
-    withEnv({ TINYBIRD_HOST: "https://data.zanreal.com", TINYBIRD_TOKEN: TOKEN });
+    withEnv({ TINYBIRD_HOST: "https://api.tinybird.co", TINYBIRD_TOKEN: TOKEN });
     const resolved = resolveTinybirdOptions();
-    expect(resolved.host).toBe("https://data.zanreal.com");
+    expect(resolved.host).toBe("https://api.tinybird.co");
     expect(resolved.token).toBe(TOKEN);
   });
 
@@ -58,18 +58,18 @@ describe("resolveTinybirdOptions", () => {
 
   it("reduces the host to an origin, so a path cannot end up doubled", () => {
     expect(
-      resolveTinybirdOptions({ host: "https://data.zanreal.com/v0/", token: TOKEN }).host,
-    ).toBe("https://data.zanreal.com");
+      resolveTinybirdOptions({ host: "https://api.tinybird.co/v0/", token: TOKEN }).host,
+    ).toBe("https://api.tinybird.co");
   });
 
   it("refuses a host with no scheme", () => {
-    expect(() => resolveTinybirdOptions({ host: "data.zanreal.com", token: TOKEN })).toThrow(
+    expect(() => resolveTinybirdOptions({ host: "api.tinybird.co", token: TOKEN })).toThrow(
       /not an absolute URL/u,
     );
   });
 
   it("refuses a host that is not http", () => {
-    expect(() => resolveTinybirdOptions({ host: "ftp://data.zanreal.com", token: TOKEN })).toThrow(
+    expect(() => resolveTinybirdOptions({ host: "ftp://api.tinybird.co", token: TOKEN })).toThrow(
       /not an http or https URL/u,
     );
   });

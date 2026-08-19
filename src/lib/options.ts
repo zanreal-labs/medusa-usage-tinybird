@@ -28,7 +28,7 @@ import { MedusaError } from "@medusajs/framework/utils";
 /** What a host may put in the provider's `options`. */
 export interface TinybirdUsageSinkOptions {
   /**
-   * The Tinybird API host, e.g. `https://data.zanreal.com` or
+   * The Tinybird API host, e.g. `https://api.tinybird.co` or
    * `http://localhost:7181` for Tinybird Local. Falls back to `TINYBIRD_HOST`.
    */
   host?: string;
@@ -76,7 +76,7 @@ export interface ResolvedTinybirdOptions {
   timeoutMs: number;
 }
 
-/** The resources `zanreal-labs/medusa-tinybird` deploys. */
+/** The resources this package's `tinybird/` schema deploys. */
 export const DEFAULT_DATASOURCE = "usage_events";
 export const DEFAULT_AGGREGATE_PIPE = "usage_aggregate";
 export const DEFAULT_LIST_PIPE = "usage_events_list";
@@ -118,7 +118,7 @@ const text = (value: unknown): string | null => {
 /**
  * The host, as an origin with no trailing slash.
  *
- * Parsed rather than pattern-matched, so `data.zanreal.com` without a scheme is
+ * Parsed rather than pattern-matched, so `api.tinybird.co` without a scheme is
  * refused with a sentence instead of producing a request to a relative URL. Only
  * http and https: anything else is a mistake that would otherwise surface as an
  * unhelpful fetch failure.
@@ -127,7 +127,7 @@ const hostOf = (value: unknown): string => {
   const candidate = text(value) ?? text(process.env[HOST_ENV_VAR]);
   if (candidate === null) {
     return fail(
-      `no Tinybird host. Set the \`host\` option on the provider or the ${HOST_ENV_VAR} environment variable, e.g. "https://data.zanreal.com".`,
+      `no Tinybird host. Set the \`host\` option on the provider or the ${HOST_ENV_VAR} environment variable, e.g. "https://api.tinybird.co".`,
     );
   }
   let url: URL;
@@ -135,7 +135,7 @@ const hostOf = (value: unknown): string => {
     url = new URL(candidate);
   } catch {
     return fail(
-      `the Tinybird host "${candidate}" is not an absolute URL. It needs a scheme, e.g. "https://data.zanreal.com".`,
+      `the Tinybird host "${candidate}" is not an absolute URL. It needs a scheme, e.g. "https://api.tinybird.co".`,
     );
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {

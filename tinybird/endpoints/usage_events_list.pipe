@@ -1,0 +1,76 @@
+DESCRIPTION >
+    The events behind an aggregate, oldest first. The audit path: whoever
+    disputes a number gets the rows it was computed from, not a recomputation
+    of it.
+
+    Same filters as `usage_aggregate`, same half-open `[date_from, date_to)`
+    window, same read-time collapse to one row per key, so a page and the total
+    it belongs to are computed from exactly the same set of events.
+
+    Paging is keyset, not offset: `cursor_occurred_at` and `cursor_key` carry the
+    last row of the previous page, and `(occurred_at, key)` is a total order over
+    an append-only log, so a page boundary cannot skip or repeat a row while new
+    events are arriving.
+
+    `quantity` comes back as a string for the same reason it does in
+    `usage_aggregate`: an Int64 is not always a JSON number.
+
+TOKEN "medusa_usage" READ
+
+NODE collapse
+DESCRIPTION >
+    One row per event key, earliest ingested copy, exactly as `usage_aggregate`
+    collapses. Both endpoints have to see the same events or the listing would
+    not prove the total.
+SQL >
+    %
+    SELECT
+        key,
+        argMax(subject, version) AS event_subject,
+        argMax(quantity, version) AS event_quantity,
+        argMax(occurred_at, version) AS event_occurred_at,
+        argMax(source, version) AS event_source,
+        argMax(properties, version) AS event_properties,
+        argMax(recorded_at, version) AS event_recorded_at
+    FROM usage_events
+    WHERE
+        meter = {{String(meter, required=True, description='The meter to list, compared byte for byte.')}}
+        AND occurred_at >= parseDateTime64BestEffort({{String(date_from, '1970-01-01T00:00:00.000Z', required=True, description='Inclusive lower bound on event time, ISO 8601.')}}, 3, 'UTC')
+        AND occurred_at < parseDateTime64BestEffort({{String(date_to, '1970-01-01T00:00:00.000Z', required=True, description='Exclusive upper bound on event time, ISO 8601.')}}, 3, 'UTC')
+        {% if defined(subject) %}
+        AND subject = {{String(subject, description='Restrict to one subject. Omitted, every subject on the meter is listed.')}}
+        {% end %}
+        {% if defined(property_keys) %}
+        AND arrayAll(
+            i ->
+                JSONHas(properties, {{Array(property_keys, 'String', description='Dimension names to filter on, positionally paired with property_values.')}}[i])
+                AND JSONExtractRaw(properties, {{Array(property_keys, 'String')}}[i]) = {{Array(property_values, 'String', description='Canonical JSON of each dimension value: strings quoted, numbers bare.')}}[i],
+            range(1, length({{Array(property_keys, 'String')}}) + 1)
+        )
+        {% end %}
+    GROUP BY key
+
+NODE endpoint
+SQL >
+    %
+    SELECT
+        key,
+        {{String(meter)}} AS meter,
+        event_subject AS subject,
+        toString(event_quantity) AS quantity,
+        toUnixTimestamp64Milli(event_occurred_at) AS occurred_at,
+        event_source AS source,
+        event_properties AS properties,
+        toUnixTimestamp64Milli(event_recorded_at) AS recorded_at
+    FROM collapse
+    {% if defined(cursor_key) %}
+    WHERE
+        (event_occurred_at, key) > (
+            parseDateTime64BestEffort({{String(cursor_occurred_at, '1970-01-01T00:00:00.000Z', description='Event time of the last row of the previous page, ISO 8601.')}}, 3, 'UTC'),
+            {{String(cursor_key, description='Key of the last row of the previous page.')}}
+        )
+    {% end %}
+    ORDER BY event_occurred_at ASC, key ASC
+    LIMIT {{Int32(page_size, 100, description='Rows per page. The caller asks for one more than it needs to learn whether another page exists.')}}
+
+TYPE ENDPOINT
