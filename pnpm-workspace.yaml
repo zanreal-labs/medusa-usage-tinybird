@@ -3,6 +3,15 @@
 # pnpm reads the nearest workspace root, which there is the monorepo's. This one
 # is what a fresh clone of THIS repository uses, and without it pnpm blocks the
 # postinstall builds that `medusa plugin:build` needs.
+overrides:
+  # Standalone, there is no workspace to satisfy the workspace:* in
+  # package.json, so it resolves from the public repository instead. The
+  # declaration stays workspace:* because inside zanreal-labs/medusa this
+  # package is a submodule beside medusa-usage, and that is the only spec pnpm
+  # reads as a topological edge - a github: reference there silently drops the
+  # ordering and the sink compiles against a half-deleted build.
+  "@zanreal/medusa-usage": "github:zanreal-labs/medusa-usage#2a260a4d04db6cc89986e0e9d25fcc2f60716b2f"
+
 allowBuilds:
   # medusa-usage is a github: dependency and compiles to .medusa/server on
   # prepare, so pnpm 11 refuses to run its build unless it is named here. The

@@ -4,9 +4,16 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@zanreal/medusa-usage': github:zanreal-labs/medusa-usage#2a260a4d04db6cc89986e0e9d25fcc2f60716b2f
+
 importers:
 
   .:
+    dependencies:
+      '@zanreal/medusa-usage':
+        specifier: github:zanreal-labs/medusa-usage#2a260a4d04db6cc89986e0e9d25fcc2f60716b2f
+        version: https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/2a260a4d04db6cc89986e0e9d25fcc2f60716b2f(@medusajs/cli@2.18.0(@types/node@20.19.43))(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@20.19.43))(@types/node@20.19.43)(ioredis@5.11.1)(vite@7.3.6(@types/node@20.19.43)(jiti@2.7.0)(yaml@2.9.0))(zod@4.2.0))(@medusajs/medusa@2.18.0(@medusajs/cli@2.18.0(@types/node@20.19.43))(@medusajs/dashboard@2.18.0(typescript@5.9.3))(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@20.19.43))(@types/node@20.19.43)(ioredis@5.11.1)(vite@7.3.6(@types/node@20.19.43)(jiti@2.7.0)(yaml@2.9.0))(zod@4.2.0))(@medusajs/icons@2.18.0(react@18.3.1))(@medusajs/ui@4.2.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(@types/node@20.19.43)(awilix@8.0.1)(picomatch@4.0.5)(posthog-node@5.49.1(rxjs@7.8.2))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(typescript@5.9.3)(yaml@2.9.0))
     devDependencies:
       '@medusajs/cli':
         specifier: 2.18.0
@@ -23,9 +30,6 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^3.2.7
         version: 3.2.7(vitest@3.2.7(@types/node@20.19.43)(jiti@2.7.0)(yaml@2.9.0))
-      '@zanreal/medusa-usage':
-        specifier: github:zanreal-labs/medusa-usage#2a260a4d04db6cc89986e0e9d25fcc2f60716b2f
-        version: https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/2a260a4d04db6cc89986e0e9d25fcc2f60716b2f(@medusajs/cli@2.18.0(@types/node@20.19.43))(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@20.19.43))(@types/node@20.19.43)(ioredis@5.11.1)(vite@7.3.6(@types/node@20.19.43)(jiti@2.7.0)(yaml@2.9.0))(zod@4.2.0))(@medusajs/medusa@2.18.0(@medusajs/cli@2.18.0(@types/node@20.19.43))(@medusajs/dashboard@2.18.0(typescript@5.9.3))(@medusajs/framework@2.18.0(@medusajs/cli@2.18.0(@types/node@20.19.43))(@types/node@20.19.43)(ioredis@5.11.1)(vite@7.3.6(@types/node@20.19.43)(jiti@2.7.0)(yaml@2.9.0))(zod@4.2.0))(@medusajs/icons@2.18.0(react@18.3.1))(@medusajs/ui@4.2.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(typescript@5.9.3))(@types/node@20.19.43)(awilix@8.0.1)(picomatch@4.0.5)(posthog-node@5.49.1(rxjs@7.8.2))(react-dom@18.3.1(react@18.3.1))(react-router-dom@6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react@18.3.1)(typescript@5.9.3)(yaml@2.9.0))
       eslint:
         specifier: ^9.0.0
         version: 9.39.5(jiti@2.7.0)
@@ -2864,7 +2868,7 @@ packages:
     engines: {node: '>=16.0.0'}
 
   '@zanreal/medusa-usage@https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/2a260a4d04db6cc89986e0e9d25fcc2f60716b2f':
-    resolution: {gitHosted: true, integrity: sha512-OHW62QENDI7qsS5Pxa+zZGdWhYv6HKUDenHAYb4SZ9BRId5/CdDiT8mybluYb7Ya5w7nM6WcTTF585MfmUlqxQ==, tarball: https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/2a260a4d04db6cc89986e0e9d25fcc2f60716b2f}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/2a260a4d04db6cc89986e0e9d25fcc2f60716b2f}
     version: 0.1.0
     engines: {node: '>=22.13'}
     peerDependencies:
