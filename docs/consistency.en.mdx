@@ -1,0 +1,173 @@
+---
+title: Exactly-once reads on a store with no primary key
+description: Why this sink's at-most-one-row-per-key guarantee lives in the read path instead of the write path, why that is not a workaround, and exactly what stays eventual because of it.
+---
+
+Read this before trusting a number this sink produces. It is the one property
+that does not port over from the built-in Postgres sink for free, and
+understanding why is what tells you which query is safe to bill from.
+
+## What the sink has to guarantee, restated
+
+The plugin's own sink contract asks for "at most one row per deduplication
+key" - a retried `write` call, carrying the same events, must not add a second
+row for any event that already made it into the log. The built-in Postgres
+sink gets this the direct way: the key **is** the row's primary key, so
+`INSERT ... ON CONFLICT DO NOTHING` makes a retry a no-op inside one atomic
+statement, and the guarantee is true the instant that statement returns.
+
+## ClickHouse has nothing that plays the same role
+
+Tinybird's data sources run on ClickHouse, and ClickHouse has no primary key
+constraint at all. Its `ORDER BY` - the sorting key - decides how rows are
+physically arranged on disk for fast range scans; it does not decide whether a
+second row sharing that key is allowed to exist. Nothing in the engine refuses
+a duplicate insert.
+
+The nearest mechanism is `ReplacingMergeTree`, the engine `usage_events.datasource`
+declares. It collapses rows that share a sorting key, but only **during
+background merges** - a maintenance process that runs when ClickHouse decides
+to, on parts it chooses to combine, at a time nobody calling `write` controls.
+Two copies of one retried event can both sit on disk for minutes, for hours,
+or - for a partition the engine never gets around to merging - indefinitely.
+
+So the honest, complete statement about `ReplacingMergeTree` on its own is:
+**eventual**. A sink built on nothing but that engine double counts every
+retry until a merge happens to run, and for a number that becomes a line on an
+invoice, "eventually correct" is not a rough edge to note in passing - it is
+exactly the failure this whole plugin, and this sink, exist to prevent.
+
+## What this sink does instead: enforce the guarantee where the log is read
+
+Deduplication here is enforced at query time, not at write time. Every
+endpoint this sink calls collapses to one row per key **before it sums
+anything**, in the endpoint's own SQL:
+
+```sql
+SELECT key, argMax(quantity, version) AS event_quantity, ...
+FROM usage_events
+WHERE ...
+GROUP BY key
+```
+
+That collapse is not eventual - it is computed fresh, over whatever rows
+happen to exist in the table at the exact moment the query runs. A duplicate
+that landed on disk a millisecond ago is already folded into one row by that
+`GROUP BY`, because the query does not care how many physical copies exist; it
+only ever emits one logical row per key. `aggregate()` called immediately
+after a retried `write()` returns the identical number it returned before the
+retry - and that is asserted against a live Tinybird instance, not argued from
+first principles: see [Testing](#testing-the-part-that-matters).
+
+## `version` decides which copy wins, and it is chosen to agree with Postgres
+
+`argMax(quantity, version)` needs `version` to break the tie between
+duplicate rows, and the schema assigns it as **the negated ingestion
+timestamp**:
+
+```text
+version = -toUnixTimestamp64Milli(recorded_at)
+```
+
+Negating it means the *largest* `version` - the row both `argMax` at read time
+and `ReplacingMergeTree` at merge time keep - is the row with the *smallest*
+`recorded_at`: the **earliest-ingested** copy. That is not an arbitrary choice.
+It is exactly the row the built-in Postgres sink keeps, because
+`INSERT ... ON CONFLICT DO NOTHING` always keeps whichever copy landed first
+and silently drops every later attempt. Picking the same rule here means the
+two sinks answer identically for the same sequence of retries, and it means
+the answer this sink gives does not depend on when, or whether, a background
+merge happened to run - the merge is choosing among rows that the read path
+was already ignoring.
+
+Both `recorded_at` and `version` are assigned by Tinybird itself when a row is
+appended, never sent by the sink. One clock decides ingestion order, exactly
+the way Postgres's own `now()` does for the built-in sink - which is what lets
+a fleet of Medusa instances with clocks that disagree by a few seconds still
+agree on which copy of an event arrived first.
+
+## Why this is not a workaround
+
+Calling the read-time collapse a stopgap for a missing database feature would
+be the wrong way to think about it, and the schema's own comments in
+`usage_events.datasource` explain why: the two rules - the `ReplacingMergeTree`
+engine and the `GROUP BY key` in every endpoint - are chosen to **agree with
+each other**, and that agreement is the actual property the sink rests on,
+not a consolation prize for lacking a primary key.
+
+**A merge can only ever remove a row the read path was already discarding.**
+Because both mechanisms keep the earliest-ingested copy under the same
+`version` rule, a merge collapsing two physical rows into one never changes
+which logical row an endpoint would have reported - it just deletes something
+that was already invisible to every query. An answer computed today and the
+same answer recomputed after however many merges have run since are
+therefore identical, which is the entire property a usage log needs to be
+audit-safe a year later. The merge is a storage optimization, full stop:
+fewer bytes to scan, not a different answer.
+
+Contrast that with the shape of an actual workaround - deduplicating in the
+application code that calls `aggregate()`, or running a periodic cleanup query
+that deletes obvious duplicates. Both of those would be racing the write path
+and would still be wrong in the gap before they ran. Enforcing the property in
+the read path removes the race instead of narrowing it: there is no window,
+however small, in which two live queries against this sink can disagree about
+one event's contribution to a total.
+
+## What is left eventual, stated as plainly as the guarantee above
+
+Being precise about the boundary of a guarantee is what makes the guarantee
+trustworthy. Three things genuinely do not have the same instant-correctness
+property, and each one is either irrelevant to billing or bounded to a single
+optimistic count:
+
+- **The physical log itself.** Between a duplicate write and whatever merge
+  eventually runs, two rows for the same key can both be sitting on disk, and
+  `SELECT count()` run directly against the `usage_events` data source will
+  say so - it is not wrong, it is answering a different question than
+  `aggregate()` does. **Never bill from a direct query against the data
+  source.** The three endpoints are the collapse, and they are this sink's
+  only supported read path; a dashboard built by querying the data source
+  directly will disagree with an invoice, correctly, because it counted rows
+  the invoice never counted.
+- **The write-side counters.** `duplicates`, in what `write()` returns, is
+  produced by asking which keys are already present immediately before
+  appending - a check, then an act. Two processes racing to write the exact
+  same key at the exact same instant can both find it absent and both append,
+  which makes the reported counters optimistic by exactly one in that narrow
+  window. Nothing else is affected by this: the two rows that land are
+  identical copies of the same event, and the read path still keeps one of
+  them. This is a blemish on a diagnostic count, not on a billed total.
+- **Which copy of a key wins, when it is observable at all.** Both rules keep
+  the earliest-ingested copy, so this only becomes visible if a caller reuses
+  one explicit `idempotencyKey` across two events that carry genuinely
+  different facts - which is a caller bug under either sink, not something
+  this package can detect or should paper over.
+
+Nothing about `aggregate()` or `listEvents()` depends on a merge having run,
+or on the pre-append duplicate check having guessed correctly. Both are
+correct against whatever the table contains at the moment they are called,
+which is the actual claim this whole page has been building toward.
+
+## Testing the part that matters
+
+A fake Tinybird backend can prove what goes out on the wire and what comes
+back off it, and the unit test suite does exactly that. It cannot prove the
+one property this page is about, because that property belongs to the real
+engine on the other side of the HTTP call, not to this package's code.
+
+So `src/live.test.ts` writes to an actual Tinybird and reads the answer back,
+skipped automatically unless the environment names one:
+
+```sh
+tb local start
+tb --local build
+TINYBIRD_HOST=http://localhost:7181 TINYBIRD_TOKEN=... pnpm test
+```
+
+What it asserts there, against a real engine rather than a description of
+one: that a write can be aggregated the instant it returns; that replaying an
+identical batch does not move the total; that a duplicate which *did* land as
+a second physical row on disk still does not move the total; that the window
+is half-open at millisecond resolution and consecutive periods tile without a
+gap or an overlap; that a dimension filter is a typed equality; and that
+paging never skips a row or repeats one.
