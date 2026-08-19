@@ -4,6 +4,11 @@
 # is what a fresh clone of THIS repository uses, and without it pnpm blocks the
 # postinstall builds that `medusa plugin:build` needs.
 allowBuilds:
+  # medusa-usage is a github: dependency and compiles to .medusa/server on
+  # prepare, so pnpm 11 refuses to run its build unless it is named here. The
+  # bare package name is deliberate: pnpm's own suggestion pins the commit
+  # tarball URL, which would need editing on every upstream commit.
+  "@zanreal/medusa-usage@https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/2a260a4d04db6cc89986e0e9d25fcc2f60716b2f": true
   "@medusajs/telemetry": false
   "@swc/core": true
   esbuild: true
