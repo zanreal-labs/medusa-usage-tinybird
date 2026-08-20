@@ -1,5 +1,5 @@
 {
-  "title": "@zanreal/medusa-usage-tinybird",
-  "description": "The Tinybird sink for @zanreal/medusa-usage: the same append-only usage log, deduplicated on read so a retry cannot double count.",
+  "title": "Tinybird Sink",
+  "description": "@zanreal/medusa-usage-tinybird is the Tinybird sink for @zanreal/medusa-usage: the same append-only usage log, deduplicated on read so a retry cannot double count.",
   "pages": ["index", "consistency"]
 }
