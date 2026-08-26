@@ -3,6 +3,9 @@
 The Tinybird sink for [`@zanreal/medusa-usage`](https://github.com/zanreal-labs/medusa-usage):
 the same append-only usage log, in a column store built to scan it.
 
+Full documentation, in English and Polish, is published at
+<https://zanreal.com/docs/oss/medusa-usage-tinybird> and authored in [`docs/`](./docs).
+
 The plugin ships a Postgres sink and works on a plain Medusa install with no
 account to open. This is for the other case: a meter counting billions of events,
 where the log stops fitting comfortably in the application's own database.
