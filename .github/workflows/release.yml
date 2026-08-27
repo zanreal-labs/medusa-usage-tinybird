@@ -127,7 +127,30 @@ jobs:
       - name: Test
         run: pnpm exec vitest run
 
-      # --provenance and --access repeat what publishConfig already sets, so this
+      # Packed by pnpm, uploaded by npm - each doing the half the other cannot.
+      #
+      # This package declares `"@zanreal/medusa-usage": "workspace:*"` in
+      # devDependencies. Inside zanreal-labs/medusa it sits beside medusa-usage
+      # as a submodule, and `workspace:*` is the only spec pnpm reads as a
+      # topological build edge; a github: reference there silently drops the
+      # ordering and this sink compiles against a half-deleted build. So the
+      # spec has to stay in the manifest.
+      #
+      # But npm does not rewrite `workspace:` - it only does that inside an NPM
+      # workspace, and this is a pnpm one with no `workspaces` field. Verified
+      # rather than assumed: `npm pack` here exits 0, emits no warning, and
+      # leaves `"workspace:*"` verbatim in the packed package.json, which would
+      # then be permanent - a published version can only be superseded, never
+      # replaced. `pnpm pack` rewrites it to the concrete version.
+      #
+      # The upload still goes through npm, not `pnpm publish`. pnpm has its own
+      # publish implementation and its docs do not mention OIDC or trusted
+      # publishing, so publishing this one package with pnpm risks making it
+      # the only package in the set that cannot move to trusted publishing -
+      # which is the whole direction of travel. npm keeps the publish path here
+      # identical to its six sibling repositories.
+      #
+      # --provenance and --access repeat what publishConfig already sets, so the
       # line reads correctly without opening the manifest. --access public is what
       # makes a first publish of a SCOPED package land as public; the default for
       # a scope is restricted, which fails on a free account.
@@ -137,4 +160,6 @@ jobs:
           # the OIDC exchange first and falls back to this token only when the
           # exchange fails, so removing the secret needs no change here.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public --tag "${{ steps.dist-tag.outputs.tag }}"
+        run: |
+          pnpm pack
+          npm publish "$(ls ./*.tgz)" --provenance --access public --tag "${{ steps.dist-tag.outputs.tag }}"
