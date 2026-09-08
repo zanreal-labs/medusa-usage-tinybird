@@ -1,10 +1,13 @@
 {
   "name": "@zanreal/medusa-usage-tinybird",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tinybird usage sink for @zanreal/medusa-usage: an append-only usage event log in a column store, deduplicated on read so a retry cannot double count.",
   "keywords": [
     "clickhouse",
     "medusa",
+    "medusa-plugin",
+    "medusa-plugin-integration",
+    "medusa-plugin-other",
     "medusa-v2",
     "metering",
     "tinybird",
@@ -31,7 +34,8 @@
     "dist",
     "tinybird",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "exports": {
     "./package.json": "./package.json",
