@@ -9,7 +9,20 @@ registry, not merge dates on `main` - see [Releasing](./README.md#releasing).
 
 ## [Unreleased]
 
-Nothing yet. `main` is at the published version.
+Nothing yet.
+
+## [0.1.1] - 2026-09-08
+
+### Changed
+
+- Keywords carry `medusa-plugin-integration`, `medusa-plugin` and a category word,
+  so the package is eligible for the Medusa integrations directory at
+  <https://medusajs.com/integrations>, which is scraped from npm. Without them the
+  package could not be picked up at all.
+
+### Added
+
+- This changelog, shipped in the published tarball.
 
 ## [0.1.0] - 2026-08-27
 
@@ -24,5 +37,6 @@ First public release. MIT, published from CI with npm provenance.
 - Standalone resolution of `@zanreal/medusa-usage` by override, so the sink can be
   installed outside the workspace that developed it.
 
-[Unreleased]: https://github.com/zanreal-labs/medusa-usage-tinybird/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/zanreal-labs/medusa-usage-tinybird/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/zanreal-labs/medusa-usage-tinybird/releases/tag/v0.1.1
 [0.1.0]: https://github.com/zanreal-labs/medusa-usage-tinybird/releases/tag/v0.1.0
