@@ -55,9 +55,9 @@
     "prepublishOnly": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@medusajs/cli": "2.21.2",
-    "@medusajs/eslint-plugin": "2.21.2",
-    "@medusajs/framework": "2.21.2",
+    "@medusajs/cli": "2.22.1",
+    "@medusajs/eslint-plugin": "2.22.1",
+    "@medusajs/framework": "2.22.1",
     "@types/node": "^20.19.43",
     "@vitest/coverage-v8": "^3.2.7",
     "@zanreal/medusa-usage": "workspace:*",
@@ -67,11 +67,11 @@
     "vitest": "^3.2.7"
   },
   "peerDependencies": {
-    "@medusajs/framework": "2.21.2",
+    "@medusajs/framework": "2.22.1",
     "@zanreal/medusa-usage": ">=0.1.0"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.22.0"
   },
   "packageManager": "pnpm@11.13.0"
 }
