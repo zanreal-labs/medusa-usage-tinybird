@@ -11,11 +11,11 @@ registry, not merge dates on `main` - see [Releasing](./README.md#releasing).
 
 ### Changed
 
-- **Built and tested against Medusa 2.21.1** (was 2.18.0), with the admin toolchain Medusa 2.19
+- **Built and tested against Medusa 2.22.1** (was 2.18.0), with the admin toolchain Medusa 2.19
   requires: Vite 7 and, where used, React Router 7. `react-i18next` and `i18next` deliberately stay
   on the majors the Medusa dashboard itself ships (13 and 23): admin extensions share the host's
   i18n instance, and a second major would give them one of their own. Install alongside Medusa
-  2.21.1; Node ^20.19 or ^22.12 is required from Medusa 2.19 on.
+  2.22.1; Node >=22.22.0 is required from Medusa 2.22 on.
 
 ## [0.1.1] - 2026-09-08
 
