@@ -10,14 +10,14 @@ overrides:
   # package is a submodule beside medusa-usage, and that is the only spec pnpm
   # reads as a topological edge - a github: reference there silently drops the
   # ordering and the sink compiles against a half-deleted build.
-  "@zanreal/medusa-usage": "github:zanreal-labs/medusa-usage#2a260a4d04db6cc89986e0e9d25fcc2f60716b2f"
+  "@zanreal/medusa-usage": "github:zanreal-labs/medusa-usage#6a2fccb4567c5cbdc2544352b592bc6759135df6"
 
 allowBuilds:
   # medusa-usage is a github: dependency and compiles to .medusa/server on
   # prepare, so pnpm 11 refuses to run its build unless it is named here. The
   # bare package name is deliberate: pnpm's own suggestion pins the commit
   # tarball URL, which would need editing on every upstream commit.
-  "@zanreal/medusa-usage@https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/2a260a4d04db6cc89986e0e9d25fcc2f60716b2f": true
+  "@zanreal/medusa-usage@https://codeload.github.com/zanreal-labs/medusa-usage/tar.gz/6a2fccb4567c5cbdc2544352b592bc6759135df6": true
   "@medusajs/telemetry": false
   "@swc/core": true
   esbuild: true

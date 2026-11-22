@@ -1,6 +1,6 @@
 {
   "name": "@zanreal/medusa-usage-tinybird",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Tinybird usage sink for @zanreal/medusa-usage: an append-only usage event log in a column store, deduplicated on read so a retry cannot double count.",
   "keywords": [
     "clickhouse",
@@ -55,9 +55,9 @@
     "prepublishOnly": "tsc -p tsconfig.json"
   },
   "devDependencies": {
-    "@medusajs/cli": "2.22.1",
-    "@medusajs/eslint-plugin": "2.22.1",
-    "@medusajs/framework": "2.22.1",
+    "@medusajs/cli": "2.23.0",
+    "@medusajs/eslint-plugin": "2.23.0",
+    "@medusajs/framework": "2.23.0",
     "@types/node": "^20.19.43",
     "@vitest/coverage-v8": "^3.2.7",
     "@zanreal/medusa-usage": "workspace:*",
@@ -67,8 +67,8 @@
     "vitest": "^3.2.7"
   },
   "peerDependencies": {
-    "@medusajs/framework": "2.22.1",
-    "@zanreal/medusa-usage": ">=0.1.0"
+    "@medusajs/framework": "2.23.0",
+    "@zanreal/medusa-usage": ">=0.2.0"
   },
   "engines": {
     "node": ">=22.22.0"
