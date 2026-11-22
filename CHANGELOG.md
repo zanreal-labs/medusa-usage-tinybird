@@ -9,13 +9,18 @@ registry, not merge dates on `main` - see [Releasing](./README.md#releasing).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.2.0] - 2026-11-22
+
 ### Changed
 
-- **Built and tested against Medusa 2.22.1** (was 2.18.0), with the admin toolchain Medusa 2.19
-  requires: Vite 7 and, where used, React Router 7. `react-i18next` and `i18next` deliberately stay
-  on the majors the Medusa dashboard itself ships (13 and 23): admin extensions share the host's
-  i18n instance, and a second major would give them one of their own. Install alongside Medusa
-  2.22.1; Node >=22.22.0 is required from Medusa 2.22 on.
+- **Built and tested against Medusa 2.23.0** (was 2.18.0 in 0.1.1): the `@medusajs/framework`
+  peer pins 2.23.0, and the `@zanreal/medusa-usage` peer is now `>=0.2.0`, the first release
+  built against the same Medusa. Install alongside Medusa 2.23.0 and stay on 0.1.1 with older
+  hosts. Node.js 22.22 or newer is required, as Medusa 2.23 itself requires.
+- Dependency updates now come from Renovate, run weekly by the `zanek-ai` app from
+  `.github/workflows/renovate.yml`.
 
 ## [0.1.1] - 2026-09-08
 
@@ -43,6 +48,7 @@ First public release. MIT, published from CI with npm provenance.
 - Standalone resolution of `@zanreal/medusa-usage` by override, so the sink can be
   installed outside the workspace that developed it.
 
-[Unreleased]: https://github.com/zanreal-labs/medusa-usage-tinybird/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/zanreal-labs/medusa-usage-tinybird/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/zanreal-labs/medusa-usage-tinybird/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/zanreal-labs/medusa-usage-tinybird/releases/tag/v0.1.1
 [0.1.0]: https://github.com/zanreal-labs/medusa-usage-tinybird/releases/tag/v0.1.0
