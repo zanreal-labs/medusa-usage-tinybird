@@ -63,7 +63,7 @@
     "@zanreal/medusa-usage": "workspace:*",
     "eslint": "^10.0.0",
     "jiti": "^2.7.0",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.0",
     "vitest": "^4.0.0"
   },
   "peerDependencies": {
