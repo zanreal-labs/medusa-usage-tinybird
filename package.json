@@ -64,7 +64,7 @@
     "eslint": "^9.39.5",
     "jiti": "^2.7.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.0.0"
   },
   "peerDependencies": {
     "@medusajs/framework": "2.23.0",
